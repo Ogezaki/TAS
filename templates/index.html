@@ -129,6 +129,8 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
     <div class="body">
       <div class="field"><label for="athlete">Nom utilisateur :</label><input id="athlete" placeholder="user"/></div>
       <div class="field"><label for="centerIcon">Icône mobile :</label><input id="centerIcon" placeholder="📍"/></div>
+      <div class="field"><label for="fuelConsumption">Consommation (L/100km) :</label><input id="fuelConsumption" type="number" placeholder="7.5" min="0" step="0.1"/></div>
+      <div class="field"><label for="gasPrice">Prix essence ($/L) :</label><input id="gasPrice" type="number" placeholder="1.65" min="0" step="0.01"/></div>
       <small>Astuce : emoji (📍, 🎯, ➤, ⊕, 🚀, …)</small>
     </div>
     <div class="actions"><button class="btnTop" id="settingsSave">Enregistrer</button></div>
@@ -207,13 +209,32 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
           settingsClose=document.getElementById('settingsClose'),
           settingsSave=document.getElementById('settingsSave'),
           athleteInp=document.getElementById('athlete'),
-          centerIconInp=document.getElementById('centerIcon');
+          centerIconInp=document.getElementById('centerIcon'),
+          fuelConsumptionInp=document.getElementById('fuelConsumption'),
+          gasPriceInp=document.getElementById('gasPrice');
     if(!st.getItem('athlete')) st.setItem('athlete','user');
     if(!st.getItem('centerIcon')) st.setItem('centerIcon','📍');
-    athleteInp.value=st.getItem('athlete'); centerIconInp.value=st.getItem('centerIcon');
+    if(!st.getItem('fuelConsumption')) st.setItem('fuelConsumption','7.5');
+    if(!st.getItem('gasPrice')) st.setItem('gasPrice','1.65');
+    athleteInp.value=st.getItem('athlete'); 
+    centerIconInp.value=st.getItem('centerIcon');
+    fuelConsumptionInp.value=st.getItem('fuelConsumption');
+    gasPriceInp.value=st.getItem('gasPrice');
     settingsBtnTop.onclick=()=>openModal(settingsModal);
     settingsClose.onclick=()=>closeModal(settingsModal);
-    settingsSave.onclick=()=>{ const a=(athleteInp.value||'user').trim(); st.setItem('athlete',a); const ic=(centerIconInp.value||'📍').trim()||'📍'; st.setItem('centerIcon',ic); if(meMarker){ const userIcon=L.divIcon({html:`<div style="font-size:24px;">${ic}</div>`,className:'userIcon',iconSize:[30,30],iconAnchor:[15,15]}); meMarker.setIcon(userIcon); } closeModal(settingsModal); toast('Réglages enregistrés'); };
+    settingsSave.onclick=()=>{ 
+      const a=(athleteInp.value||'user').trim(); 
+      st.setItem('athlete',a); 
+      const ic=(centerIconInp.value||'📍').trim()||'📍'; 
+      st.setItem('centerIcon',ic);
+      const fc=(fuelConsumptionInp.value||'7.5').trim();
+      st.setItem('fuelConsumption',fc);
+      const gp=(gasPriceInp.value||'1.65').trim();
+      st.setItem('gasPrice',gp);
+      if(meMarker){ const userIcon=L.divIcon({html:`<div style="font-size:24px;">${ic}</div>`,className:'userIcon',iconSize:[30,30],iconAnchor:[15,15]}); meMarker.setIcon(userIcon); } 
+      closeModal(settingsModal); 
+      toast('Réglages enregistrés'); 
+    };
 
     // ---- Carte ----
     const map=L.map('map',{zoomControl:false,attributionControl:false});
@@ -312,6 +333,13 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
       const elapsed=chronoStart?(Date.now()-chronoStart):0;
       const distM=Math.round(totalDistM);
       const avgK=elapsed>0?(distM/(elapsed/1000))*3.6:0;
+      
+      // Calcul consommation essence
+      const fuelConsumption = parseFloat(st.getItem('fuelConsumption') || '7.5');
+      const gasPrice = parseFloat(st.getItem('gasPrice') || '1.65');
+      const distKm = distM / 1000;
+      const fuelLitersUsed = (distKm * fuelConsumption) / 100;
+      const fuelCostCAD = fuelLitersUsed * gasPrice;
 
       const payload={
         athlete,
@@ -322,6 +350,8 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
         avg_kmh:Number(avgK.toFixed(2)),
         max_kmh:Number(maxSpeedKmh.toFixed(2)),
         pace_min_km: paceFmt(avgK),
+        fuel_liters_used:Number(fuelLitersUsed.toFixed(2)),
+        fuel_cost_cad:Number(fuelCostCAD.toFixed(2)),
         trace
       };
 
@@ -411,12 +441,14 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
         const start=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
         const dur=fmtHMS(r.elapsed_ms||0);
         const dist=(r.distance_m/1000).toFixed(2)+' km';
+        const fuel = r.fuel_liters_used ? r.fuel_liters_used.toFixed(2)+' L' : '— L';
+        const cost = r.fuel_cost_cad ? '$'+r.fuel_cost_cad.toFixed(2) : '—';
         return `
           <div class="ltItem ltRow" data-i="${i}">
             <div><div class="ltMap" id="ltmap-${i}"></div></div>
             <div>
               <div class="ltTitle">Départ ${start} — ${dist}</div>
-              <div class="ltMeta">Durée ${dur}</div>
+              <div class="ltMeta">Durée ${dur} | Essence ${fuel} (${cost})</div>
               <div class="ltActions"><button class="btnTop" data-act="details">Détails</button></div>
             </div>
           </div>`;
@@ -493,7 +525,27 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
     document.getElementById('ltBody').addEventListener('scroll', () => setTimeout(invalidateAllMiniMaps, 0));
 
     // ---- Boot ----
-    function initUI(){ setIdle(); updateLoginUI(); if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(p=>onFix(p.coords.latitude,p.coords.longitude)); } }
+    function initUI(){ 
+      setIdle(); 
+      updateLoginUI(); 
+      if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(p=>onFix(p.coords.latitude,p.coords.longitude)); }
+      
+      // Charger les prix d'essence à l'initialisation
+      fetch('/api/gas-price-by-coords/0/0')
+        .then(r => r.json())
+        .then(data => {
+          if(data.price && data.price !== 'None') {
+            const priceStr = String(data.price).replace('$', '').replace('CAD', '').trim();
+            const price = parseFloat(priceStr);
+            if(!isNaN(price)) {
+              st.setItem('gasPrice', price.toFixed(2));
+              document.getElementById('gasPrice').value = price.toFixed(2);
+              log(`[GAS] Auto-detected price: $${price.toFixed(2)}/L from ${data.detected_region}`);
+            }
+          }
+        })
+        .catch(e => console.log('[GAS] Could not auto-detect price:', e));
+    }
     initUI();
   })();
   </script>

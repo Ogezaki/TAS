@@ -262,6 +262,8 @@ html,body{height:100%;margin:0;font-family:system-ui,Arial;background:#000;color
     const avg = (run.avg_kmh||0);
     const mx  = (run.max_kmh||0);
     const pc  = run.pace_min_km || paceFmt(avg);
+    const fuel = (run.fuel_liters_used||0).toFixed(2);
+    const cost = (run.fuel_cost_cad||0).toFixed(2);
 
     statsDiv.innerHTML = `
       <div class="card"><h3>Distance</h3><div class="num">${km.toFixed(2)} km</div></div>
@@ -269,6 +271,7 @@ html,body{height:100%;margin:0;font-family:system-ui,Arial;background:#000;color
       <div class="card"><h3>Vitesse moy.</h3><div class="num">${avg.toFixed(1)} km/h</div></div>
       <div class="card"><h3>Vitesse max</h3><div class="num">${mx.toFixed(1)} km/h</div></div>
       <div class="card"><h3>Pace</h3><div class="num">${pc}</div></div>
+      <div class="card"><h3>⛽ Essence</h3><div class="num">${fuel} L</div><div class="muted">$${cost}</div></div>
       <div class="card"><h3>Zones attente</h3><div class="num">${document.querySelectorAll('.leaflet-interactive[stroke="red"]').length}</div><div class="muted">(&lt; 5 km/h ≥ 10s)</div></div>
     `;
 

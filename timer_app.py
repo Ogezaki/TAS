@@ -7,8 +7,13 @@ APP_DIR = Path(__file__).parent.resolve()
 DATA_DIR = APP_DIR / "data"
 RUNS_DIR = DATA_DIR / "runs"
 LOG_FILE = DATA_DIR / "runs_log.csv"
+PRICES_FILE = APP_DIR / "prices_essence.json"
 
 app = Flask(__name__, template_folder=str(APP_DIR / "templates"), static_folder=str(APP_DIR / "static"))
+
+# Importer et enregistrer le blueprint essence
+from essence_api import essence_bp
+app.register_blueprint(essence_bp)
 
 def log(msg): print(msg, flush=True)
 
@@ -37,6 +42,28 @@ def heartbeat():
     data = request.get_json(silent=True) or {}
     log(f"[API] heartbeat {data}")
     return jsonify(ok=True)
+
+@app.post("/api/refresh-gas-prices")
+def refresh_gas_prices():
+    """
+    Rafraîchit les prix d'essence en scrapant le site
+    """
+    try:
+        from scraper_essence import scrape_essence_quebec
+        log("[API] Refreshing gas prices from EssenceQuébec...")
+        prices = scrape_essence_quebec()
+        
+        if prices:
+            with PRICES_FILE.open('w', encoding='utf-8') as f:
+                json.dump(prices, f, ensure_ascii=False, indent=2)
+            log(f"[API] Gas prices refreshed: {len(prices)} regions found")
+            return jsonify(ok=True, regions_count=len(prices))
+        else:
+            log("[API] Failed to scrape gas prices")
+            return jsonify(ok=False, error="Failed to scrape prices"), 500
+    except Exception as e:
+        log(f"[API] Error refreshing gas prices: {e}")
+        return jsonify(ok=False, error=str(e)), 500
 
 @app.post("/api/save_free_run")
 def save_free_run():

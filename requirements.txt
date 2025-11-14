@@ -1,2 +1,5 @@
 Flask>=3.0
 cryptography>=42
+beautifulsoup4>=4.11
+lxml>=4.9
+requests>=2.28
