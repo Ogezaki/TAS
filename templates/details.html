@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Détails du trajet</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+:root{ --brand:#8ecaff; --overlay:rgba(0,0,0,.55); --overlay2:rgba(0,0,0,.72); }
+html,body{height:100%;margin:0;font-family:system-ui,Arial;background:#000;color:#fff;overscroll-behavior:none}
+#map{position:fixed;inset:0;background:#111}
+
+/* Barre top */
+#topbar{
+  position:absolute; left:50%; top:10px; transform:translateX(-50%);
+  display:flex; gap:8px; align-items:center; z-index:1002;
+  background:var(--overlay2); border:2px solid var(--brand); border-radius:999px;
+  padding:8px 10px; box-shadow:0 6px 18px rgba(0,0,0,.25)
+}
+#backBtn{
+  border:2px solid var(--brand); border-radius:999px; padding:6px 10px;
+  color:#fff; background:transparent; text-decoration:none; font-weight:700;
+}
+#datePrev,#dateNext{
+  border:2px solid var(--brand); border-radius:999px; padding:6px 10px;
+  background:#00000066; color:#8ecaff; font-weight:800; cursor:pointer;
+}
+#datePick{
+  border:1px solid #39424e; border-radius:10px; padding:6px 10px; background:#0b0e12; color:#e6f2ff;
+  font-weight:700;
+}
+#runMeta{
+  position:absolute; top:64px; left:50%; transform:translateX(-50%);
+  z-index:1001; padding:6px 10px; border-radius:12px;
+  background:var(--overlay2); border:2px solid var(--brand);
+  color:#e6f2ff; font-weight:800; text-align:center; white-space:nowrap
+}
+
+/* Flèches flottantes */
+.navBtn{
+  position:absolute; top:50%; transform:translateY(-50%);
+  background:rgba(0,0,0,.4); border:2px solid var(--brand); border-radius:50%;
+  width:56px; height:56px; display:flex; align-items:center; justify-content:center;
+  font-size:26px; color:#8ecaff; cursor:pointer; z-index:1001; backdrop-filter:blur(4px)
+}
+#prevBtn{ left:14px } #nextBtn{ right:14px }
+.navBtn[disabled]{ opacity:.4; cursor:not-allowed }
+
+/* Stats overlay */
+#stats{
+  position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+  width:calc(100vw - 24px); max-width:920px; z-index:1001;
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;
+}
+.card{ background:var(--overlay); border:2px solid var(--brand); border-radius:12px; padding:10px; backdrop-filter:blur(4px) }
+.card h3{ margin:0 0 6px; font-size:13px; color:var(--brand) }
+.num{ font-weight:800; font-size:18px }
+.muted{ opacity:.85 }
+@media(min-width:640px){ #stats{ grid-template-columns:repeat(3,1fr) } }
+@media(min-width:920px){ #stats{ grid-template-columns:repeat(6,1fr) } }
+
+/* Message si aucun run */
+#emptyMsg{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  z-index:1001; background:var(--overlay2); border:2px solid var(--brand);
+  border-radius:12px; padding:14px 18px; font-weight:700; color:#e6f2ff; display:none;
+  max-width:92vw; text-align:center;
+}
+</style>
+</head>
+<body>
+  <div id="map" aria-label="map"></div>
+
+  <div id="topbar">
+    <a id="backBtn" href="/">Retour</a>
+    <button id="datePrev" title="Jour précédent">⟵</button>
+    <input id="datePick" type="date">
+    <button id="dateNext" title="Jour suivant">⟶</button>
+  </div>
+
+  <div id="runMeta"></div>
+  <button id="prevBtn" class="navBtn" title="Trajet précédent">←</button>
+  <button id="nextBtn" class="navBtn" title="Trajet suivant">→</button>
+
+  <div id="stats"></div>
+  <div id="emptyMsg">Aucun trajet <em>valide</em> ce jour-là (≥ 1 min et &gt; 100 m). Choisissez une autre date.</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function(){
+  /* ====== Constantes (mêmes seuils que index.html) ====== */
+  const MIN_VALID_MS = 60_000; // 1 minute
+  const MIN_VALID_M  = 100;    // 100 m
+
+  /* ====== Utils Date ====== */
+  const pad2 = (n)=> String(n).padStart(2,'0');
+  const toYMD = (d)=> d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
+  const fromYMD = (s)=>{ const [y,m,dd]=s.split('-').map(Number); const d=new Date(y,m-1,dd); d.setHours(0,0,0,0); return d; };
+
+  /* ====== Local storage utils ====== */
+  const st = localStorage;
+  const currentUser = ()=> st.getItem('currentUser') || st.getItem('athlete') || 'user';
+  const runsKey = (u)=> 'runs:'+u;
+
+  function getAllRunsAllUsers(){
+    const arr=[];
+    for(let i=0;i<st.length;i++){
+      const k=st.key(i);
+      if(k && k.startsWith('runs:')){
+        try{
+          const a=JSON.parse(st.getItem(k) || '[]');
+          if(Array.isArray(a)) arr.push(...a);
+        }catch(_){}
+      }
+    }
+    return arr;
+  }
+  function getMyRuns(){
+    const u=currentUser();
+    let a=[];
+    try{ a = JSON.parse(st.getItem(runsKey(u)) || '[]'); }catch(_){ a=[]; }
+    if(!Array.isArray(a) || a.length===0){
+      // fallback athlète “user”
+      const ath=st.getItem('athlete');
+      if(ath && ath!==u){
+        try{ a = JSON.parse(st.getItem(runsKey(ath)) || '[]'); }catch(_){}
+      }
+    }
+    if(!Array.isArray(a) || a.length===0){
+      a = getAllRunsAllUsers();
+    }
+    return Array.isArray(a) ? a : [];
+  }
+
+  /* ====== Carte ====== */
+  let map=L.map('map',{zoomControl:true});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+  L.control.scale({imperial:false}).addTo(map);
+  setTimeout(()=>map.invalidateSize(),60);
+
+  let poly=null, idleMarkers=[];
+  function clearLayers(){
+    if(poly){ map.removeLayer(poly); poly=null; }
+    for(const m of idleMarkers){ map.removeLayer(m); }
+    idleMarkers=[];
+  }
+  function fitPolyline(latlngs){
+    if(!latlngs || !latlngs.length) return;
+    poly=L.polyline(latlngs,{color:'#2196f3',weight:4,opacity:0.95}).addTo(map);
+    map.fitBounds(poly.getBounds(),{padding:[20,20]});
+  }
+  // Zones attente (v<5 km/h ≥10s)
+  function renderIdleZones(trace){
+    const IDLE_KMH=5, IDLE_MIN_SEC=10;
+    function speedKmh(p1,p2){
+      const dt=(p2.t-p1.t)/1000; if(dt<=0) return 0;
+      const dlat=(p2.lat-p1.lat)*Math.PI/180, dlon=(p2.lon-p1.lon)*Math.PI/180;
+      const a=Math.sin(dlat/2)**2 + Math.cos(p1.lat*Math.PI/180)*Math.cos(p2.lat*Math.PI/180)*Math.sin(dlon/2)**2;
+      const d=2*6371000*Math.asin(Math.sqrt(a)); // m
+      return (d/dt)*3.6;
+    }
+    let accT=0, blockStart=null;
+    for(let i=1;i<trace.length;i++){
+      const p1=trace[i-1], p2=trace[i];
+      const v=speedKmh(p1,p2), dt=(p2.t-p1.t)/1000;
+      if(v<IDLE_KMH){
+        if(blockStart===null) blockStart=p1;
+        accT+=dt;
+        if(i===trace.length-1 && accT>=IDLE_MIN_SEC){
+          idleMarkers.push(L.circleMarker([p2.lat,p2.lon],{color:'red',radius:5,opacity:0.9,fillOpacity:0.9}).addTo(map));
+        }
+      }else{
+        if(accT>=IDLE_MIN_SEC && blockStart){
+          idleMarkers.push(L.circleMarker([p1.lat,p1.lon],{color:'red',radius:5,opacity:0.9,fillOpacity:0.9}).addTo(map));
+        }
+        accT=0; blockStart=null;
+      }
+    }
+  }
+
+  /* ====== Sélection / Navigation ====== */
+  const datePick = document.getElementById('datePick');
+  const datePrev = document.getElementById('datePrev');
+  const dateNext = document.getElementById('dateNext');
+  const runMeta  = document.getElementById('runMeta');
+  const statsDiv = document.getElementById('stats');
+  const emptyMsg = document.getElementById('emptyMsg');
+  const prevBtn  = document.getElementById('prevBtn');
+  const nextBtn  = document.getElementById('nextBtn');
+
+  function fmtHMS(ms){
+    const t=Math.max(0,Math.floor(ms));
+    const h=Math.floor(t/3600000), m=Math.floor((t%3600000)/60000), s=Math.floor((t%60000)/1000);
+    return (h? (String(h).padStart(2,'0')+':') : '') + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  }
+  function paceFmt(kmh){
+    if(!kmh || kmh<=0) return '--:-- /km';
+    const min = 60/kmh; const m=Math.floor(min), s=Math.round((min-m)*60);
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} /km`;
+  }
+
+  let allRuns = getMyRuns(); // tous les runs (multi-utilisateurs fallback inclus)
+  // Trie décroissant par date de départ (optionnel)
+  allRuns.sort((a,b)=> new Date(b.start_time_iso||0) - new Date(a.start_time_iso||0));
+
+  // Indice dans runsDuJour
+  let dayRuns = [];
+  let idx = 0;
+
+  function setDate(d){
+    datePick.value = toYMD(d);
+    loadForDate(d);
+  }
+  function changeDateBy(deltaDays){
+    const d = fromYMD(datePick.value || toYMD(new Date()));
+    d.setDate(d.getDate() + deltaDays);
+    setDate(d);
+  }
+
+  function loadForDate(d){
+    const ymd = toYMD(d);
+    // filtre runs du jour + valides
+    dayRuns = allRuns
+      .filter(r => (r.start_time_iso ? toYMD(new Date(r.start_time_iso)) === ymd : false))
+      .filter(r => (r.elapsed_ms||0) >= MIN_VALID_MS && (r.distance_m||0) > MIN_VALID_M);
+
+    if(dayRuns.length===0){
+      // Rien pour ce jour
+      emptyMsg.style.display='block';
+      runMeta.textContent='';
+      statsDiv.innerHTML='';
+      clearLayers();
+      try{ map.setView([48.8584,2.2945], 13); }catch(_){}
+      prevBtn.disabled=true; nextBtn.disabled=true;
+    }else{
+      emptyMsg.style.display='none';
+      idx = 0;
+      render(dayRuns[idx]);
+    }
+  }
+
+  function render(run){
+    if(!run || !run.trace || !run.trace.length){
+      emptyMsg.style.display='block';
+      runMeta.textContent=''; statsDiv.innerHTML='';
+      clearLayers(); return;
+    }
+
+    // Meta
+    const start = new Date(run.start_time_iso || Date.now());
+    const dateStr = toYMD(start) + ' ' + start.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    runMeta.textContent = `Trajet ${idx+1}/${dayRuns.length} — ${dateStr}`;
+
+    // Carte
+    clearLayers();
+    const latlngs = run.trace.map(p=>[p.lat,p.lon]);
+    fitPolyline(latlngs);
+    renderIdleZones(run.trace);
+
+    // Stats
+    const km = (run.distance_m||0)/1000;
+    const avg = (run.avg_kmh||0);
+    const mx  = (run.max_kmh||0);
+    const pc  = run.pace_min_km || paceFmt(avg);
+
+    statsDiv.innerHTML = `
+      <div class="card"><h3>Distance</h3><div class="num">${km.toFixed(2)} km</div></div>
+      <div class="card"><h3>Durée</h3><div class="num">${fmtHMS(run.elapsed_ms||0)}</div></div>
+      <div class="card"><h3>Vitesse moy.</h3><div class="num">${avg.toFixed(1)} km/h</div></div>
+      <div class="card"><h3>Vitesse max</h3><div class="num">${mx.toFixed(1)} km/h</div></div>
+      <div class="card"><h3>Pace</h3><div class="num">${pc}</div></div>
+      <div class="card"><h3>Zones attente</h3><div class="num">${document.querySelectorAll('.leaflet-interactive[stroke="red"]').length}</div><div class="muted">(&lt; 5 km/h ≥ 10s)</div></div>
+    `;
+
+    // Flèches run précédent/suivant (du même jour)
+    prevBtn.disabled = (idx<=0);
+    nextBtn.disabled = (idx>=dayRuns.length-1);
+  }
+
+  /* === Binds === */
+  document.getElementById('datePrev').onclick = ()=> changeDateBy(-1);
+  document.getElementById('dateNext').onclick = ()=> changeDateBy(+1);
+  document.getElementById('datePick').onchange = ()=> loadForDate(fromYMD(datePick.value || toYMD(new Date())));
+  document.getElementById('prevBtn').onclick = ()=> { if(idx>0){ idx--; render(dayRuns[idx]); } };
+  document.getElementById('nextBtn').onclick = ()=> { if(idx<dayRuns.length-1){ idx++; render(dayRuns[idx]); } };
+
+  /* === Initialisation === */
+  // Par défaut, date du "lastViewedRun" si dispo, sinon aujourd'hui
+  let initialDate = new Date();
+  
+  // Vérifier si on vient du mode historique
+  const isHistoricalMode = st.getItem('viewHistoricalMode') === 'true';
+  if(isHistoricalMode){
+    st.removeItem('viewHistoricalMode');
+    // Si on a un dernier run vu, utiliser sa date
+    try{
+      const viewed = JSON.parse(st.getItem('lastViewedRun') || 'null');
+      if(viewed && viewed.start_time_iso){
+        initialDate = new Date(viewed.start_time_iso);
+      }
+    }catch(_){}
+    // Sinon, commencer par le jour du plus récent run
+    if(allRuns.length > 0){
+      initialDate = new Date(allRuns[0].start_time_iso || Date.now());
+    }
+  } else {
+    // Mode normal: afficher le run récemment consulté
+    try{
+      const viewed = JSON.parse(st.getItem('lastViewedRun') || 'null');
+      if(viewed && viewed.start_time_iso){
+        initialDate = new Date(viewed.start_time_iso);
+      }
+    }catch(_){}
+  }
+  
+  setDate(initialDate);
+})();
+</script>
+</body>
+</html>

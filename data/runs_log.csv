@@ -1,0 +1,8 @@
+timestamp_iso,athlete,session_id,segment_id,segment_name,length_m_est,elapsed_ms,elapsed_hms,buffer_m,distance_m,avg_kmh,max_kmh,pace_min_km,trace_json_path
+2025-11-06T19:04:22.507818,Test,Test-2025-11-07T00:04:00.523Z,,,,21568,00:21.5,0,0,0,0.02,--:-- /km,C:/Users/natha/Downloads/tas_pack_v9_2_full/data/runs/2025-11-06/Test/Test_20251106_190422.json
+2025-11-06T19:53:05.833327,Test,Test-2025-11-07T00:45:09.296Z,,,,475501,07:55.5,0,1054,7.98,74.05,07:31 /km,C:/Users/natha/Downloads/tas_pack_v9_2_full/data/runs/2025-11-06/Test/Test_20251106_195305.json
+2025-11-06T19:58:44.283435,Test,Test-2025-11-07T00:53:28.059Z,,,,315789,05:15.7,0,1547,17.64,905.42,03:24 /km,C:/Users/natha/Downloads/tas_pack_v9_2_full/data/runs/2025-11-06/Test/Test_20251106_195844.json
+2025-11-06T20:05:14.276310,Test,Test-2025-11-07T01:05:11.671Z,,,,2111,00:02.1,0,0,0,0.07,--:-- /km,C:/Users/natha/Downloads/tas_pack_v9_2_full/data/runs/2025-11-06/Test/Test_20251106_200514.json
+2025-11-06T20:46:23.743086,Test,Test-2025-11-07T01:46:21.089Z,,,,2586,00:02.5,0,0,0,0.01,--:-- /km,C:/Users/natha/Downloads/tas_pack_v9_2_full/data/runs/2025-11-06/Test/Test_20251106_204623.json
+2025-11-06T20:57:25.048483,Test,Test-2025-11-07T01:57:23.831Z,,,,1146,00:01.1,0,0,0,0.11,--:-- /km,C:/Users/natha/Downloads/tas_pack_v9_2_full/data/runs/2025-11-06/Test/Test_20251106_205725.json
+2025-11-07T09:45:14.917690,Test,Test-2025-11-07T14:34:24.114Z,,,,650408,10:50.4,0,524,2.9,170.13,20:41 /km,C:/Users/natha/Downloads/tas_pack_v9_2_full/data/runs/2025-11-07/Test/Test_20251107_094514.json
