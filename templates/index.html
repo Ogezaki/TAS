@@ -35,6 +35,7 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
 #chrono{left:50%;top:calc(var(--barH) + var(--safe-top) + 8px);transform:translateX(-50%);min-width:120px;text-align:center}
 #pace {right:8px;top:calc(var(--barH) + var(--safe-top) + 8px)}
 #dist {left:8px;top:calc(var(--barH) + var(--safe-top) + 48px)}
+#fuel {right:8px;top:calc(var(--barH) + var(--safe-top) + 48px)}
 .btn{
   border:2px solid var(--brand);border-radius:999px;background:var(--overlay);color:#fff;
   font-weight:800;padding:10px 14px;min-width:90px;cursor:pointer;text-align:center;
@@ -106,6 +107,7 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
   <div id="chrono" class="pill">00:00.0</div>
   <div id="pace"  class="pill">--:-- /km</div>
   <div id="dist"  class="pill">0.00 km</div>
+  <div id="fuel"  class="pill">⛽ $0.00</div>
 
   <div id="row">
     <button id="start" class="btn">Start</button>
@@ -250,6 +252,7 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
           chronoEl=document.getElementById('chrono'),
           paceEl=document.getElementById('pace'),
           distEl=document.getElementById('dist'),
+          fuelEl=document.getElementById('fuel'),
           startBtn=document.getElementById('start'),
           stopBtn=document.getElementById('stop');
 
@@ -263,6 +266,26 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
     // ---- Chrono ----
     function startTimer(){ if(chronoTimer) return; chronoStart=Date.now(); chronoEl.textContent='00:00.0'; chronoTimer=setInterval(()=>{ const el=Date.now()-chronoStart; chronoEl.textContent=fmtHMS(el); const avgKmh=el>0?(totalDistM/(el/1000))*3.6:0; paceEl.textContent=paceFmt(avgKmh); }, 200); }
     function stopTimer(){ if(chronoTimer){ clearInterval(chronoTimer); chronoTimer=null; } }
+
+    // ---- Mise à jour coût essence (toutes les 10 sec) ----
+    let fuelUpdateTimer=null;
+    function updateFuelCost(){
+      const fuelConsumption = parseFloat(st.getItem('fuelConsumption') || '7.5');
+      const gasPrice = parseFloat(st.getItem('gasPrice') || '1.65');
+      const distKm = totalDistM / 1000;
+      const fuelLitersUsed = (distKm * fuelConsumption) / 100;
+      const fuelCostCAD = fuelLitersUsed * gasPrice;
+      fuelEl.textContent = `⛽ $${fuelCostCAD.toFixed(2)}`;
+    }
+    function startFuelTimer(){
+      if(fuelUpdateTimer) clearInterval(fuelUpdateTimer);
+      updateFuelCost();
+      fuelUpdateTimer = setInterval(updateFuelCost, 10000); // Update toutes les 10 sec
+    }
+    function stopFuelTimer(){
+      if(fuelUpdateTimer){ clearInterval(fuelUpdateTimer); fuelUpdateTimer=null; }
+      updateFuelCost(); // Update final
+    }
 
     // ---- Geoloc ----
     function onFix(lat,lon){
@@ -387,14 +410,14 @@ html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,
       totalDistM=0; lastFix=null; lastFixTime=null; trace=[];
       lastSpeedKmh=0; maxSpeedKmh=0; idleStartMs=null;
       liveTrail.setLatLngs([]);
-      setRun(); startTimer(); startWatch();
+      setRun(); startTimer(); startFuelTimer(); startWatch();
       if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(p=>{onFix(p.coords.latitude,p.coords.longitude);}); }
       toast('Go!');
     }
     async function stopRun(auto=false){
       if(!running) return;
       running=false;
-      stopWatch(); stopTimer(); setIdle();
+      stopWatch(); stopTimer(); stopFuelTimer(); setIdle();
       await saveRun(auto);
     }
 
